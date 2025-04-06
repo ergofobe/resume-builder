@@ -1,12 +1,20 @@
 {
   "name": "resume-builder",
   "version": "1.0.0",
-  "main": "builder.js",
+  "description": "AI-powered resume builder that tailors your resume to specific job descriptions",
+  "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "dependencies": {
+    "axios": "^1.6.7",
+    "pdfkit": "^0.14.0",
+    "openai": "^4.28.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
 }
