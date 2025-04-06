@@ -2,7 +2,6 @@ const fsPromises = require('fs').promises;
 const fs = require('fs');
 const readline = require('readline');
 const axios = require('axios');
-const MarkdownIt = require('markdown-it');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const yargs = require('yargs');
@@ -38,19 +37,13 @@ const argv = yargs(process.argv.slice(2))
 
 // Constants
 const MASTER_RESUME_PATH = 'master-resume.md';
-const CSS_PATH = 'resume.css';
 const OUTPUT_DIR = path.join(__dirname, 'output');
-const OUTPUT_MD_PATH = path.join(OUTPUT_DIR, 'tailored_resume.md');
-const OUTPUT_PDF_PATH = path.join(OUTPUT_DIR, 'tailored_resume.pdf');
 
 // Setup readline interface for user input
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout
 });
-
-// Initialize markdown-it
-const md = new MarkdownIt();
 
 // Function to ensure output directory exists
 async function ensureOutputDirectory() {
@@ -81,14 +74,6 @@ async function readMasterResume() {
     return await fsPromises.readFile(MASTER_RESUME_PATH, 'utf8');
   } catch (error) {
     console.error('Error reading master resume:', error);
-    process.exit(1);
-  }
-}
-
-// Function to verify CSS file existence
-async function verifyCssFile() {
-  if (!(await fileExists(CSS_PATH))) {
-    console.error(`Error: ${CSS_PATH} not found. Please ensure it exists in the directory.`);
     process.exit(1);
   }
 }
@@ -221,13 +206,13 @@ async function saveTailoredResumeMd(resumeContent) {
 }
 
 // Function to convert Markdown to PDF
-async function convertToPdf() {
+async function convertToPdf(inputPath, outputPath) {
   const spinner = new Spinner('Converting to PDF...');
   spinner.start();
 
   try {
     // Read the Markdown file
-    const markdownContent = await fsPromises.readFile(OUTPUT_MD_PATH, 'utf8');
+    const markdownContent = await fsPromises.readFile(inputPath, 'utf8');
 
     // Create a PDF document with initial settings
     const doc = new PDFDocument({
@@ -242,7 +227,7 @@ async function convertToPdf() {
     });
 
     // Create write stream
-    const writeStream = fs.createWriteStream(OUTPUT_PDF_PATH);
+    const writeStream = fs.createWriteStream(outputPath);
     doc.pipe(writeStream);
 
     // Default styles
@@ -268,16 +253,13 @@ async function convertToPdf() {
     for (let line of lines) {
       if (!line.trim()) continue; // Skip empty lines
 
-      // Handle inline formatting first
-      let formattedLine = line;
-      
-      // Now apply the appropriate style based on line type
+      // Handle line based on Markdown syntax
       if (line.startsWith('# ')) {
         // h1 - Main title
         doc.font(styles.h1.font)
            .fontSize(styles.h1.size)
            .fillColor(styles.h1.color)
-           .text(formattedLine.substring(2), { paragraphGap: styles.h1.spacing });
+           .text(line.substring(2), { paragraphGap: styles.h1.spacing });
       }
       else if (line.startsWith('## ')) {
         // h2 - Section headers
@@ -285,25 +267,24 @@ async function convertToPdf() {
         const pageHeight = doc.page.height - doc.page.margins.bottom - 30; // Account for footer
         const lineHeight = doc.currentLineHeight();
         
-        // Calculate the height needed for the header and minimum content
-        const headerText = formattedLine.substring(3);
+        // Calculate space needed for header and minimum content
+        const headerText = line.substring(3);
         const headerHeight = doc.heightOfString(headerText, {
           width: doc.page.width - doc.page.margins.left - doc.page.margins.right
         });
-        const spaceNeeded = headerHeight + (lineHeight * 3); // Header + 2 lines of content + spacing
+        const spaceNeeded = headerHeight + (lineHeight * 3);
 
-        // If we don't have enough space on this page, add a new page
+        // Add new page if needed
         if (currentHeight + spaceNeeded > pageHeight) {
           doc.addPage();
-          doc.y = doc.page.margins.top; // Reset Y position on new page
+          doc.y = doc.page.margins.top;
         }
 
-        // Add pre-header spacing only if we're not at the top of a page
+        // Add pre-header spacing if not at top of page
         if (doc.y > doc.page.margins.top) {
           doc.moveDown(styles.h2.preSpacing / doc.currentLineHeight());
         }
 
-        // Write the header
         doc.font(styles.h2.font)
            .fontSize(styles.h2.size)
            .fillColor(styles.h2.color)
@@ -315,23 +296,20 @@ async function convertToPdf() {
       else if (line.startsWith('### ')) {
         // h3 - Subsection headers
         const currentHeight = doc.y;
-        const pageHeight = doc.page.height - doc.page.margins.bottom - 30; // Account for footer
+        const pageHeight = doc.page.height - doc.page.margins.bottom - 30;
         const lineHeight = doc.currentLineHeight();
         
-        // Calculate the height needed for the header and minimum content
-        const headerText = formattedLine.substring(4);
+        const headerText = line.substring(4);
         const headerHeight = doc.heightOfString(headerText, {
           width: doc.page.width - doc.page.margins.left - doc.page.margins.right
         });
-        const spaceNeeded = headerHeight + (lineHeight * 3); // Header + 2 lines of content + spacing
+        const spaceNeeded = headerHeight + (lineHeight * 3);
 
-        // If we don't have enough space on this page, add a new page
         if (currentHeight + spaceNeeded > pageHeight) {
           doc.addPage();
-          doc.y = doc.page.margins.top; // Reset Y position on new page
+          doc.y = doc.page.margins.top;
         }
 
-        // Write the header
         doc.font(styles.h3.font)
            .fontSize(styles.h3.size)
            .fillColor(styles.h3.color)
@@ -341,69 +319,60 @@ async function convertToPdf() {
            });
       }
       else {
-        // For both regular text and bullet points
-        let textToWrite = formattedLine;
-        if (line.startsWith('- ')) {
-          textToWrite = styles.bullet.marker + ' ' + formattedLine.substring(2);
-        }
+        // Handle regular text and bullet points
+        let textToWrite = line;
+        let options = {
+          paragraphGap: styles.normal.spacing,
+          align: line.startsWith('- ') ? 'left' : 'justify',  // Only justify non-bullet text
+          indent: line.startsWith('- ') ? styles.bullet.indent : 0
+        };
 
-        // Start with normal font settings
+        // Set up normal text style
         doc.font(styles.normal.font)
            .fontSize(styles.normal.size)
            .fillColor(styles.normal.color);
 
-        // Handle links and bold text
-        // Match markdown links [text](url), URLs starting with http:// or https://, and bold text **text**
-        let parts = textToWrite.split(/(\[.*?\]\(.*?\)|https?:\/\/\S+|\*\*.*?\*\*)/g);
-        
-        // Filter out empty parts but preserve whitespace
-        parts = parts.filter(part => part);
+        if (line.startsWith('- ')) {
+          textToWrite = styles.bullet.marker + ' ' + line.substring(2);
+        }
 
+        // Split only on markdown formatting
+        let parts = textToWrite.split(/(\[.*?\]\(.*?\)|\*\*.*?\*\*|https?:\/\/\S+)/g);
+        parts = parts.filter(Boolean);
+
+        // Process each part
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
-          const isLast = i === parts.length - 1;
-          
-          // Common text options
-          const textOptions = {
-            continued: !isLast,
-            paragraphGap: isLast ? styles.normal.spacing : 0,
-            indent: line.startsWith('- ') ? styles.bullet.indent : 0,
-            align: line.startsWith('- ') ? 'left' : 'justify'  // Justify normal paragraphs, but not bullet points
-          };
+          options.continued = i < parts.length - 1;
 
-          if (part.match(/\[(.*?\]\(.*?\))/)) {
-            // Handle Markdown links
+          if (part.match(/^\[.*?\]\(.*?\)$/)) {
+            // Markdown link
             const [, text, url] = part.match(/\[(.*?)\]\((.*?)\)/);
             doc.fillColor(styles.link.color)
-               .text(text, {
-                 ...textOptions,
-                 link: url,
-                 underline: styles.link.underline
-               });
-            doc.fillColor(styles.normal.color);
-          } else if (part.match(/^https?:\/\/\S+/)) {
-            // Handle plain URLs
-            const url = part.replace(/[.,;:!?]$/, ''); // Remove trailing punctuation if any
+               .text(text, { ...options, link: url, underline: styles.link.underline })
+               .fillColor(styles.normal.color);
+          }
+          else if (part.match(/^https?:\/\/\S+$/)) {
+            // URL
+            const url = part.replace(/[.,;:!?]$/, '');
             doc.fillColor(styles.link.color)
-               .text(url, {
-                 ...textOptions,
-                 link: url,
-                 underline: styles.link.underline
-               });
-            doc.fillColor(styles.normal.color);
-          } else if (part.startsWith('**') && part.endsWith('**')) {
-            // Handle bold text
+               .text(url, { ...options, link: url, underline: styles.link.underline })
+               .fillColor(styles.normal.color);
+          }
+          else if (part.match(/^\*\*.*\*\*$/)) {
+            // Bold text
             doc.font(styles.h1.font)
-               .text(part.slice(2, -2), textOptions);
-            doc.font(styles.normal.font);
-          } else {
-            // Handle regular text
-            doc.text(part, textOptions);
+               .text(part.slice(2, -2), options)
+               .font(styles.normal.font);
+          }
+          else {
+            // Regular text
+            doc.text(part, options);
           }
         }
       }
 
-      // Reset to default style after each line
+      // Reset style after each line
       doc.font(styles.normal.font)
          .fontSize(styles.normal.size)
          .fillColor(styles.normal.color);
@@ -442,7 +411,7 @@ async function convertToPdf() {
     return new Promise((resolve, reject) => {
       writeStream.on('finish', () => {
         spinner.stop();
-        console.log(`Tailored resume saved as PDF to ${OUTPUT_PDF_PATH}`);
+        console.log(`Tailored resume saved as PDF to ${outputPath}`);
         resolve();
       });
       writeStream.on('error', (error) => {
@@ -482,34 +451,112 @@ class Spinner {
   }
 }
 
+// Function to get suggested filename from AI
+async function getSuggestedFilename(masterResume, jobDescription) {
+  const spinner = new Spinner('Getting filename suggestion...');
+  spinner.start();
+
+  const prompt = `
+    You are being called through an API to suggest a filename for a resume. Using the contact information from the master resume and the job description/role provided, suggest a clear and professional filename.
+
+    Guidelines:
+    - Use only lowercase letters, numbers, and hyphens
+    - Do not use spaces or special characters
+    - Include the name from the contact info (first initial and last name, without a hyphen)
+    - Include a shortened one or two word reference to the role (e.g. "devops-engineer" or "solutions-architect")
+    - Do not include dates
+    - Format: resume-name-role
+    - Keep it concise but clear
+    - Respond with ONLY the filename, no explanation or additional text
+
+    Example formats:
+    resume-jsmith-devops-engineer
+    resume-jdoe-product-manager
+    resume-mjones-solutions-architect
+
+    Master Resume Contact Info:
+    ${masterResume.split('\n').slice(0, 10).join('\n')}
+
+    Job Description/Role:
+    ${jobDescription.split('\n')[0]}  // Just take the first line for the role
+  `;
+
+  try {
+    const response = await axios.post(config.aiApiUrl, {
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      model: config.aiModel,
+      max_tokens: 60,
+      temperature: 0.3
+    }, {
+      headers: {
+        'Authorization': `Bearer ${config.aiApiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    spinner.stop();
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    spinner.stop();
+    console.error('Error getting filename suggestion:', error.response ? error.response.data : error.message);
+    // Return a default filename if AI suggestion fails
+    return 'resume';
+  }
+}
+
+// Function to update output paths with the suggested filename
+function updateOutputPaths(suggestedName) {
+  const timestamp = new Date().toISOString().split('T')[0];  // YYYY-MM-DD
+  const baseName = `${suggestedName}-${timestamp}`;
+  return {
+    md: path.join(OUTPUT_DIR, `${baseName}.md`),
+    pdf: path.join(OUTPUT_DIR, `${baseName}.pdf`)
+  };
+}
+
 // Main function to run the script
 async function main() {
-  console.log('Starting resume generation process...');
+  try {
+    // Start the resume generation process
+    console.log('Starting resume generation...');
 
-  // Verify CSS file exists
-  await verifyCssFile();
+    // Ensure output directory exists
+    if (!fs.existsSync(OUTPUT_DIR)) {
+      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    }
 
-  // Ensure output directory exists
-  await ensureOutputDirectory();
+    // Read master resume
+    const masterResume = await fsPromises.readFile(MASTER_RESUME_PATH, 'utf8');
 
-  // Read the master resume
-  const masterResume = await readMasterResume();
+    // Get job description from user
+    const jobDescription = await getJobDescription();
 
-  // Get job description from user
-  const jobDescription = await getJobDescription();
+    // Get suggested filename based on job description and contact info
+    const suggestedName = await getSuggestedFilename(masterResume, jobDescription);
+    const outputPaths = updateOutputPaths(suggestedName);
 
-  // Generate tailored resume using AI API
-  const tailoredResume = await generateTailoredResume(masterResume, jobDescription);
+    // Generate tailored resume using AI API
+    const tailoredResume = await generateTailoredResume(masterResume, jobDescription);
 
-  // Save the tailored resume as Markdown
-  await saveTailoredResumeMd(tailoredResume);
+    // Save tailored resume as Markdown
+    await fsPromises.writeFile(outputPaths.md, tailoredResume);
+    console.log(`Tailored resume saved as Markdown to ${outputPaths.md}`);
 
-  // Convert to PDF
-  console.log('Converting Markdown to PDF...');
-  await convertToPdf();
+    // Convert to PDF
+    console.log('Converting Markdown to PDF...');
+    await convertToPdf(outputPaths.md, outputPaths.pdf);
 
-  console.log('Resume generation and conversion complete!');
-  process.exit(0);
+    console.log('Resume generation and conversion complete!');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error:', error.message);
+    process.exit(1);
+  }
 }
 
 // Run the script
