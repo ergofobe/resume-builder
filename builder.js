@@ -367,7 +367,8 @@ async function convertToPdf() {
           const textOptions = {
             continued: !isLast,
             paragraphGap: isLast ? styles.normal.spacing : 0,
-            indent: line.startsWith('- ') ? styles.bullet.indent : 0
+            indent: line.startsWith('- ') ? styles.bullet.indent : 0,
+            align: line.startsWith('- ') ? 'left' : 'justify'  // Justify normal paragraphs, but not bullet points
           };
 
           if (part.match(/\[(.*?\]\(.*?\))/)) {
