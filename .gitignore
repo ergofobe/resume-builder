@@ -2,5 +2,5 @@ config.json
 config.json.*
 node_modules/
 *.pdf
-*.md 
+master-resume.md
 output/

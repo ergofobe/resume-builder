@@ -5,8 +5,8 @@ const axios = require('axios');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const yargs = require('yargs');
-const { convertToPdf } = require('./pdf-converter');
-const Spinner = require('./spinner');
+const { convertToPdf } = require('./lib/pdf-converter');
+const Spinner = require('./lib/spinner');
 
 // Configuration
 let config;
@@ -148,15 +148,8 @@ async function validateContent(masterResume, generatedContent, type = 'resume') 
        - New projects or work not documented
        - Specific claims about capabilities or experience not supported by the master resume
 
-    4. VALIDATION METHODOLOGY:
-       - For each factual claim in the generated content, verify it exists in the master resume
-       - Pay special attention to specific technologies, tools, and platforms
-       - Check for any claims about years of experience or specific achievements
-       - Verify that all certifications and qualifications are listed in the master resume
-       - Ensure no new projects or work experiences have been added
-       - Confirm that all responsibilities and achievements are supported by the master resume
-
-    IMPORTANT: You must respond with EXACTLY one of these two formats:
+    IMPORTANT RESPONSE FORMAT:
+    You must respond with EXACTLY one of these two formats, with no additional formatting, markdown, or special characters:
     1. If valid: "VALID"
     2. If invalid: "INVALID: [detailed explanation of what was added or changed]"
 
@@ -193,8 +186,11 @@ async function validateContent(masterResume, generatedContent, type = 'resume') 
     console.log(validationResult);
     console.log('-------------------\n');
     
-    if (!validationResult.startsWith('VALID')) {
-      throw new Error(validationResult);
+    // Clean the validation result by removing any markdown formatting
+    const cleanResult = validationResult.replace(/\*\*/g, '').trim();
+    
+    if (!cleanResult.startsWith('VALID')) {
+      throw new Error(cleanResult);
     }
     
     return true;

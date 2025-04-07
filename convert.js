@@ -2,8 +2,8 @@
 
 const path = require('path');
 const fs = require('fs');
-const { convertToPdf } = require('./pdf-converter');
-const Spinner = require('./spinner');
+const { convertToPdf } = require('./lib/pdf-converter');
+const Spinner = require('./lib/spinner');
 
 async function main() {
   const spinner = new Spinner('Converting to PDF...');
