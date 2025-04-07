@@ -109,9 +109,9 @@ async function getJobDescription() {
   }
 }
 
-// Function to call AI API
+// Function to generate tailored resume using AI
 async function generateTailoredResume(masterResume, jobDescription) {
-  const spinner = new Spinner('Generating tailored resume using AI...');
+  const spinner = new Spinner('Generating tailored resume...');
   spinner.start();
 
   const prompt = `
@@ -125,7 +125,7 @@ async function generateTailoredResume(masterResume, jobDescription) {
     - NEVER add personal statements, relocation preferences, or availability notes unless they exist in the master resume
     - NEVER add meta-information or descriptive text like "(End of resume)", "Continued...", etc.
     - For ALL sections EXCEPT the Summary: ONLY include content that appears in the master resume
-    - Your role is to SELECT and ARRANGE content from the master resume, not to create new content
+    - Your role is to SELECT, ARRANGE, and ADAPT content from the master resume, not to create new content
     - If a section from the master resume isn't relevant, omit it entirely - do not replace it with similar content
 
     Summary Section Exception:
@@ -192,7 +192,7 @@ async function generateTailoredResume(masterResume, jobDescription) {
       ],
       model: config.aiModel,
       max_tokens: config.maxTokens,
-      temperature: 0.7
+      temperature: 0.3
     }, {
       headers: {
         'Authorization': `Bearer ${config.aiApiKey}`,
@@ -204,8 +204,8 @@ async function generateTailoredResume(masterResume, jobDescription) {
     return response.data.choices[0].message.content.trim();
   } catch (error) {
     spinner.stop();
-    console.error('Error calling AI API:', error.response ? error.response.data : error.message);
-    process.exit(1);
+    console.error('Error generating tailored resume:', error.response ? error.response.data : error.message);
+    throw error;
   }
 }
 
@@ -520,7 +520,7 @@ async function getSuggestedNames(masterResume, jobDescription, type = 'resume') 
         }
       ],
       model: config.aiModel,
-      max_tokens: 100,
+      max_tokens: config.maxTokens,
       temperature: 0.3
     }, {
       headers: {
@@ -705,7 +705,7 @@ async function generateCoverLetter(masterResume, jobDescription) {
         }
       ],
       model: config.aiModel,
-      max_tokens: 1000,
+      max_tokens: config.maxTokens,
       temperature: 0.7
     }, {
       headers: {
@@ -771,7 +771,7 @@ async function getSuggestedCoverLetterFilename(masterResume, jobDescription) {
         }
       ],
       model: config.aiModel,
-      max_tokens: 60,
+      max_tokens: config.maxTokens,
       temperature: 0.3
     }, {
       headers: {
@@ -786,6 +786,74 @@ async function getSuggestedCoverLetterFilename(masterResume, jobDescription) {
     spinner.stop();
     console.error('Error getting cover letter filename suggestion:', error.response ? error.response.data : error.message);
     return 'cover-letter';
+  }
+}
+
+// Function to generate job posting summary
+async function generateJobSummary(jobDescription) {
+  const spinner = new Spinner('Generating job posting summary...');
+  spinner.start();
+
+  const prompt = `
+    You are being called through an API to generate a clear, concise summary of a job posting.
+    Analyze the job description and create a structured summary that helps the applicant understand:
+    1. The key responsibilities and day-to-day activities
+    2. The required qualifications and skills
+    3. The preferred qualifications and nice-to-haves
+    4. Any unique aspects of the role or company culture
+
+    CRITICAL REQUIREMENTS:
+    1. Be objective and factual - only include information explicitly stated in the job description
+    2. Do not make assumptions or add information not present in the posting
+    3. Organize the information clearly with section headers
+    4. Keep the summary concise and easy to scan
+    5. Do not include any meta-information or comments
+    6. Do not wrap the response in a code block or markdown formatting
+
+    Format Requirements:
+    - Use clear section headers in ALL CAPS
+    - Use bullet points for lists
+    - Keep paragraphs short and focused
+    - Use a blank line between sections
+    - Do not include any markdown formatting or special characters
+
+    Job Description:
+    ${jobDescription}
+  `;
+
+  try {
+    const response = await axios.post(config.aiApiUrl, {
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      model: config.aiModel,
+      max_tokens: config.maxTokens,
+      temperature: 0.3
+    }, {
+      headers: {
+        'Authorization': `Bearer ${config.aiApiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    spinner.stop();
+    
+    // Clean up the response and apply text wrapping
+    const content = response.data.choices[0].message.content
+      .trim()
+      .replace(/```markdown/g, '')  // Remove markdown code block markers
+      .replace(/```/g, '')          // Remove any remaining code block markers
+      .replace(/^\s*\/\/.*$/gm, '') // Remove any comment lines
+      .trim();
+    
+    return wrapText(content);
+  } catch (error) {
+    spinner.stop();
+    console.error('Error generating job summary:', error.response ? error.response.data : error.message);
+    throw error;
   }
 }
 
@@ -822,6 +890,13 @@ async function main() {
     // Convert to PDF
     console.log('Converting Markdown to PDF...');
     await convertToPdf(resumePaths.md, resumePaths.pdf);
+
+    // Generate job posting summary
+    console.log('\nGenerating job posting summary...');
+    const jobSummary = await generateJobSummary(jobDescription);
+    const summaryPath = path.join(OUTPUT_DIR, names.folder, `job-summary-${names.folder}-${new Date().toISOString().split('T')[0]}.txt`);
+    await fsPromises.writeFile(summaryPath, jobSummary);
+    console.log(`Job posting summary saved to ${summaryPath}`);
 
     // Generate cover letter if requested
     if (argv.cover) {
