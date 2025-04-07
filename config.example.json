@@ -1,0 +1,7 @@
+{
+    "instructions": "Copy this file to config.json and replace these placeholder values with your actual API credentials",
+    "aiApiKey": "YOUR_API_KEY_HERE",
+    "aiApiUrl": "https://api.example.com/v1/chat/completions",
+    "aiModel": "gpt-4-turbo-preview",
+    "maxTokens": 4000
+} 
